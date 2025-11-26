@@ -1,0 +1,17 @@
+LICENSE
+README.md
+pyproject.toml
+s1_sol/__init__.py
+s1_sol/bootstrap_analysis.py
+s1_sol/data_loader.py
+s1_sol/estimators.py
+s1_sol/example.py
+s1_sol/fitting.py
+s1_sol/mle_fits.py
+s1_sol/plotting.py
+s1_sol/simultaneous_fit.py
+s1_sol.egg-info/PKG-INFO
+s1_sol.egg-info/SOURCES.txt
+s1_sol.egg-info/dependency_links.txt
+s1_sol.egg-info/requires.txt
+s1_sol.egg-info/top_level.txt

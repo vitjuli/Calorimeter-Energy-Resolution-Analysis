@@ -105,3 +105,47 @@ def estimate_parameters_by_energy(grouped_data):
         }
     
     return results
+
+
+def calculate_jackknife_stats(data):
+    """
+    Calculate Jackknife statistics (bias-corrected mean/std and their variances).
+    
+    Parameters
+    ----------
+    data : array-like
+        Input data
+        
+    Returns
+    -------
+    stats : dict
+        Dictionary containing:
+        - mean_jk: Bias-corrected mean
+        - mean_var: Variance of the mean estimate
+        - std_jk: Bias-corrected standard deviation
+        - std_var: Variance of the std estimate
+    """
+    from resample import jackknife
+    
+    # Define statistic functions
+    # Note: for std, we want sample std (ddof=1)
+    def sample_std(x):
+        return np.std(x, ddof=1)
+        
+    # Calculate for Mean
+    # jackknife.bias_corrected returns the bias-corrected estimate
+    mean_jk = jackknife.bias_corrected(np.mean, data)
+    mean_var = jackknife.variance(np.mean, data)
+    
+    # Calculate for Std
+    std_jk = jackknife.bias_corrected(sample_std, data)
+    std_var = jackknife.variance(sample_std, data)
+    
+    return {
+        'mean_jk': mean_jk,
+        'mean_var': mean_var,
+        'mean_err': np.sqrt(mean_var), # Standard error is sqrt(variance)
+        'std_jk': std_jk,
+        'std_var': std_var,
+        'std_err': np.sqrt(std_var)
+    }

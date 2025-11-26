@@ -82,10 +82,7 @@ def fit_mean_parameters(E0_values, means, mean_errors):
     
     # Create Minuit object
     m = Minuit(least_squares, lambda_param=1.0, Delta=0.0)
-    
-    # Set parameter limits (optional but good practice)
-    m.limits['lambda_param'] = (0.5, 1.5)  # reasonable range
-    m.limits['Delta'] = (-5, 5)  # reasonable range
+
     
     # Run minimization
     m.migrad()  # Find minimum
@@ -142,10 +139,6 @@ def fit_resolution_parameters(E0_values, stds, std_errors):
     # Create Minuit object with initial guesses
     m = Minuit(least_squares, a=0.15, b=0.5, c=0.01)
     
-    # Set limits - all parameters must be positive
-    m.limits['a'] = (0, None)
-    m.limits['b'] = (0, None)
-    m.limits['c'] = (0, None)
     
     # Run minimization
     m.migrad()  # Find minimum
@@ -169,7 +162,7 @@ def fit_resolution_parameters(E0_values, stds, std_errors):
 
 def bootstrap_fit(grouped_data, n_bootstrap=100):
     """
-    Bootstrap analysis for fitting uncertainty.
+    Bootstrap analysis for fitting uncertainty using resample package.
     
     Parameters
     ----------
@@ -183,6 +176,8 @@ def bootstrap_fit(grouped_data, n_bootstrap=100):
     results : dict
         Bootstrap results with parameter distributions
     """
+    from resample import bootstrap
+    
     lambda_vals = []
     Delta_vals = []
     a_vals = []
@@ -191,27 +186,30 @@ def bootstrap_fit(grouped_data, n_bootstrap=100):
     
     E0_list = sorted(grouped_data.keys())
     
+    # Create generators for each energy group
+    # We use a list of generators to iterate through them simultaneously
+    boot_generators = [bootstrap.resample(grouped_data[E0]['E_rec'], size=n_bootstrap) for E0 in E0_list]
+    
     for i in range(n_bootstrap):
-        # Resample each energy group
+        # Get next sample for each group
         boot_means = []
         boot_stds = []
         
-        for E0 in E0_list:
-            E_rec = grouped_data[E0]['E_rec']
-            # Resample with replacement
-            boot_sample = np.random.choice(E_rec, size=len(E_rec), replace=True)
-            boot_means.append(np.mean(boot_sample))
-            boot_stds.append(np.std(boot_sample, ddof=1))
+        for gen in boot_generators:
+            sample = next(gen)
+            boot_means.append(np.mean(sample))
+            boot_stds.append(np.std(sample, ddof=1))
         
         # Fit to bootstrap sample
         try:
-            # Calculate errors for this bootstrap sample
+            # Calculate errors for this bootstrap sample (using original errors as weights is standard)
             mean_err = [np.std(grouped_data[E0]['E_rec'], ddof=1) / np.sqrt(len(grouped_data[E0]['E_rec'])) 
                        for E0 in E0_list]
             std_err = [np.std(grouped_data[E0]['E_rec'], ddof=1) / np.sqrt(2*(len(grouped_data[E0]['E_rec'])-1))
                       for E0 in E0_list]
             
             # Fit mean using iminuit
+            # Suppress output
             _, mean_params, _ = fit_mean_parameters(E0_list, boot_means, mean_err)
             
             # Fit resolution using iminuit
@@ -377,9 +375,9 @@ def print_fit_results(mean_minuit, resolution_minuit):
 
 def bootstrap_mle_trends(grouped_data, n_bootstrap=100):
     """
-    Perform full bootstrap analysis for MLE trends (Exercise 2ii).
+    Perform full bootstrap analysis for MLE trends (Exercise 2ii) using resample.
     
-    1. Resample data for each E0
+    1. Resample data for each E0 using resample package
     2. Fit Gaussian to resampled data (get mu, sigma)
     3. Fit trends to these mu, sigma
     4. Repeat
@@ -397,11 +395,15 @@ def bootstrap_mle_trends(grouped_data, n_bootstrap=100):
         Distributions of parameters lambda, Delta, a, b, c
     """
     from s1_sol import mle_fits
+    from resample import bootstrap
     
     boot_results = {'lambda': [], 'Delta': [], 'a': [], 'b': [], 'c': []}
     E0_arr = np.array(sorted(grouped_data.keys()))
     
     print(f"Running bootstrap with {n_bootstrap} iterations...")
+    
+    # Create generators for each energy group
+    boot_generators = [bootstrap.resample(grouped_data[E0]['E_rec'], size=n_bootstrap) for E0 in E0_arr]
     
     for i in range(n_bootstrap):
         # Temporary lists for this iteration
@@ -409,10 +411,9 @@ def bootstrap_mle_trends(grouped_data, n_bootstrap=100):
         b_stds, b_std_errs = [], []
         
         try:
-            for E0 in E0_arr:
+            for gen, E0 in zip(boot_generators, E0_arr):
                 # 1. Resample
-                data = grouped_data[E0]['E_rec']
-                resample = np.random.choice(data, size=len(data), replace=True)
+                resample = next(gen)
                 
                 # 2. Fit Gaussian (MLE)
                 # We suppress warnings/prints here for speed
@@ -437,4 +438,60 @@ def bootstrap_mle_trends(grouped_data, n_bootstrap=100):
             continue
             
     return boot_results
+
+
+def run_jackknife_analysis(grouped_data):
+    """
+    Perform Jackknife analysis for all energy groups and fit trends.
+    
+    Parameters
+    ----------
+    grouped_data : dict
+        Dictionary from group_by_energy()
+        
+    Returns
+    -------
+    results : dict
+        Dictionary containing:
+        - per_energy: dict of jackknife stats for each E0
+        - params: fitted parameters (lambda, Delta, a, b, c) based on JK estimates
+        - errors: errors on fitted parameters
+    """
+    from s1_sol import estimators
+    
+    E0_list = sorted(grouped_data.keys())
+    
+    jk_means = []
+    jk_mean_errs = []
+    jk_stds = []
+    jk_std_errs = []
+    
+    per_energy_results = {}
+    
+    # 1. Calculate Jackknife stats for each energy
+    for E0 in E0_list:
+        data = grouped_data[E0]['E_rec']
+        stats = estimators.calculate_jackknife_stats(data)
+        
+        per_energy_results[E0] = stats
+        
+        jk_means.append(stats['mean_jk'])
+        jk_mean_errs.append(stats['mean_err'])
+        jk_stds.append(stats['std_jk'])
+        jk_std_errs.append(stats['std_err'])
+        
+    # 2. Fit trends to Jackknife estimates
+    # Note: We use the jackknife errors as weights for the fit
+    _, mean_params, mean_fit_errs = fit_mean_parameters(E0_list, jk_means, jk_mean_errs)
+    _, res_params, res_fit_errs = fit_resolution_parameters(E0_list, jk_stds, jk_std_errs)
+    
+    # Combine parameters
+    params = {**mean_params, **res_params}
+    errors = {**mean_fit_errs, **res_fit_errs}
+    
+    return {
+        'per_energy': per_energy_results,
+        'params': params,
+        'errors': errors
+    }
 

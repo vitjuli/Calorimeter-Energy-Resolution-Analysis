@@ -40,9 +40,7 @@ def fit_gaussian_for_energy(E_rec, E0_true):
     init_sigma = np.std(E_rec, ddof=1)
     
     m = Minuit(nll, mu=init_mu, sigma=init_sigma)
-    
-    # Limits
-    m.limits['sigma'] = (0, None)
+
     
     # Minimize
     m.migrad()

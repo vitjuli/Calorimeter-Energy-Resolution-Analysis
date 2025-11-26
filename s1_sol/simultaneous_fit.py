@@ -44,7 +44,7 @@ class SimultaneousNLL:
         
         # 3. Calculate Gaussian NLL
         # NLL = sum( log(sigma) + 0.5 * ((x - mu)/sigma)^2 )
-        # We ignore the constant term 0.5 * log(2*pi) as it doesn't affect minimization
+        # we ignore the constant term 1/2... since it doesn't affect minimisation
         
         z_score = (self.E_rec - mu) / sigma
         nll = np.sum(np.log(sigma) + 0.5 * z_score**2)
@@ -83,12 +83,6 @@ def run_simultaneous_fit(E_true, E_rec):
                b=0.5, 
                c=0.05)
     
-    # Set limits
-    # Resolution parameters must be positive
-    m.limits['a'] = (0, None)
-    m.limits['b'] = (0, None)
-    m.limits['c'] = (0, None)
-    
     # Error definition for likelihood (0.5 for NLL)
     m.errordef = Minuit.LIKELIHOOD
     
@@ -119,7 +113,7 @@ def run_simultaneous_fit(E_true, E_rec):
 
 def bootstrap_simultaneous_fit(E_true, E_rec, n_bootstrap=100):
     """
-    Perform bootstrap analysis for simultaneous fit.
+    Perform bootstrap analysis for simultaneous fit using resample package.
     
     Parameters
     ----------
@@ -133,21 +127,26 @@ def bootstrap_simultaneous_fit(E_true, E_rec, n_bootstrap=100):
     boot_results : dict
         Distributions of parameters
     """
+    from resample import bootstrap
+    
     boot_results = {'lambda': [], 'Delta': [], 'a': [], 'b': [], 'c': []}
     n_events = len(E_true)
     
     print(f"Running simultaneous bootstrap ({n_bootstrap} iterations)...")
     
-    # Pre-calculate initial guesses from a quick fit or use standards
-    # to speed up convergence
+    # Combine into one array for resampling pairs
+    data = np.column_stack((E_true, E_rec))
+    
+    # Create generator
+    boot_gen = bootstrap.resample(data, size=n_bootstrap)
     
     for i in range(n_bootstrap):
         if i % 10 == 0: print(f"  Iteration {i}/{n_bootstrap}...")
         
-        # Resample indices
-        indices = np.random.randint(0, n_events, size=n_events)
-        E_true_boot = E_true[indices]
-        E_rec_boot = E_rec[indices]
+        # Get next sample
+        sample = next(boot_gen)
+        E_true_boot = sample[:, 0]
+        E_rec_boot = sample[:, 1]
         
         try:
             # Run fit (suppress output)
