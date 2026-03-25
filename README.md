@@ -2,6 +2,8 @@
 
 *A statistical study of detector response modelling using Maximum Likelihood Estimation, profile likelihoods, and resampling methods.*
 
+**Iuliia Vitiugova** · Department of Applied Mathematics and Theoretical Physics  · University of Cambridge · 2025
+
 ---
 
 ## Overview
